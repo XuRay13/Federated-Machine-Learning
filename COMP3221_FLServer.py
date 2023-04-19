@@ -20,7 +20,7 @@ class Server:
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                 print("Server host names: ", self.ID, " Port: ", self.PORT)
                 s.bind((self.HOST, self.PORT))        # Bind to the port
-                s.listen(10)
+                s.listen(5)
                 while(True):
                     c, addr = s.accept()     #1. Establish connection with client.
                     print("[Server] Got connection from", addr)
@@ -32,10 +32,11 @@ class Server:
                         return
                     
                     dic = data.decode('utf-8')
-                    data_json = json.loads(dic) #[id, data_size]
+                    data_json = json.loads(dic) #{"id": "client1", "data_size": 99}
 
-                    print(data_json)
-                    if self.clients[data_json[]]
+                    if self.clients.get(data_json["id"], None) == None:
+                        self.clients[data_json["id"]] = data_json["data_size"]
+
 
                     print("FIRST HANDSHAKE COMPLETE.. waiting 30 seconds")
                     time.sleep(30)
@@ -44,7 +45,7 @@ class Server:
 
         except Exception as e:
             print(['[Server] ', e])
-            print("[Server] Can't connect to the Socket")
+            print("[Server] Can't connect to the Socket: " + str(e))
 
 
 

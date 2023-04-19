@@ -37,6 +37,8 @@ class Client:
                     msg_data_json = json.dumps(msg)
                     s.send(msg_data_json.encode('utf-8'))
                     print("[Client{}] sent data...".format(self.ID))
+
+                    
                     
                     
             except Exception as e:
