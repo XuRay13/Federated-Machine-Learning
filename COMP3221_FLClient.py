@@ -20,34 +20,75 @@ class Client:
     def __init__(self, *args):
         self.HOST = 'localhost'
 
-        self.ID = sys.argv[1] #("client1")
-        self.PORT = int(sys.argv[2]) #(PORT 6000)
+        self.ID = sys.argv[1] # (client1)
+        self.ID_num = int(sys.argv[1][-1]) #(1)
+        self.PORT = int(sys.argv[2]) #(PORT 6001)
 
     def run(self):
         X_train, y_train, X_test, y_test, train_samples, test_samples = self.get_data()
         
-        while(True):
-            try:
-                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:#s = socket.socket()         # Create a socket object
+
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                s.connect((self.HOST, 6000)) #"A", 6000
+                print("established connection to server")
+
+                # Send handshake
+                msg = {"id": self.ID_num, "type": "handshake", "data_size": len(X_train)}
+
+                msg_data_json = json.dumps(msg)
+                s.send(msg_data_json.encode('utf-8'))
+                print("[Client{}] sent data...".format(self.ID))
+
+            
+            while True:
+                print("I am client " + str(self.ID_num))
+                print("Receiving new global model")
+                # Receive global model
+                model_data = self.listen_for_broadcast()
+                if model_data['model'] is None and model_data['message'] == "Training finished":
+                    return
+                
+                # TODO: Test global model
+                # TODO: Train local model
+                # Send local model
+                msg = {"id": self.ID_num, "type": "model", "model": None}
+
+                msg_data_json = json.dumps(msg)
+                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
                     s.connect((self.HOST, 6000)) #"A", 6000
-                    print("established connection to server")
-
-                    msg = {"id": self.ID, "data_size": len(X_train)}
-
-                    msg_data_json = json.dumps(msg)
                     s.send(msg_data_json.encode('utf-8'))
-                    print("[Client{}] sent data...".format(self.ID))
+                    s.close()
+        
+        except Exception as e:
+            print("[Client] Can't connect to the Server:  ", str(e))
+            exit()
 
-                    
-                    
-                    
-            except Exception as e:
-                print("[Client] Can't connect to the Server:  ", str(e))
-                exit()
+    def listen_for_broadcast(self):
+        # Simply listen for a message from the server
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                s.bind((self.HOST, self.PORT))
+                s.listen(1) # listen for server message
+                c, addr = s.accept()
+                data = c.recv(1024)
+                if not data:
+                    return
+                data_json = json.loads(data.decode('utf-8')) 
+                return data_json
+        except Exception as e:
+            print("Failed to open socket as server: " + str(e))
 
+    def test_model(self):
+        # TODO
+        pass
 
-
-
+    def train_model(self):
+        # TODO
+        pass
 
 
     def get_data(self, id=""):
@@ -79,6 +120,8 @@ class Client:
         print(image.shape)
         plt.imshow(image, cmap='gray')
         print("label:",y_train[0])
+
+    
 
 
 client = Client()
