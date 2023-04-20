@@ -15,6 +15,7 @@ import matplotlib.pyplot as plt
 import pickle
 
 lr = 0.01
+# Check 5, 10, 20
 batch_size = 20
 E = 2
 
@@ -42,7 +43,10 @@ class UserAVG():
         self.X_train, self.y_train, self.X_test, self.y_test, self.train_samples, self.test_samples = data
         self.train_data = [(x, y) for x, y in zip(self.X_train, self.y_train)]
         self.test_data = [(x, y) for x, y in zip(self.X_test, self.y_test)]
-        self.trainloader = DataLoader(self.train_data, self.train_samples)
+        if batch_size:
+            self.trainloader = DataLoader(self.train_data, batch_size)
+        else:
+            self.trainloader = DataLoader(self.train_data, self.train_samples)
         self.testloader = DataLoader(self.test_data, self.test_samples)
 
         self.loss = nn.NLLLoss()
@@ -84,7 +88,7 @@ class UserAVG():
         for x, y in self.testloader:
             output = self.model(x)
             test_acc += (torch.sum(torch.argmax(output, dim=1) == y) * 1. / y.shape[0]).item()
-            print("Testing accuracy: ", test_acc)
+            print("Testing accuracy: ", test_acc * 100)
         return test_acc
 
 
@@ -97,6 +101,8 @@ class Client:
         self.ID = sys.argv[1] # (client1)
         self.ID_num = int(sys.argv[1][-1]) #(1)
         self.PORT = int(sys.argv[2]) #(PORT 6001)
+
+        self.mini_batch_GD = int(sys.argv[3])
 
     def run(self):
         data = self.get_data()
@@ -123,7 +129,10 @@ class Client:
                 server_data = self.listen_for_broadcast()
                 server_model = server_data['model']
                 # Test local model
-                local_model = UserAVG(self.ID_num, server_model, lr, batch_size, data)
+                if self.mini_batch_GD == 1:
+                    local_model = UserAVG(self.ID_num, server_model, lr, batch_size, data)
+                else:
+                    local_model = UserAVG(self.ID_num, server_model, lr, None, data)
                 local_model.train_loss()
                 local_model.test()
                 
@@ -154,7 +163,7 @@ class Client:
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                 s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
                 s.bind((self.HOST, self.PORT))
-                s.listen(1) # listen for server message
+                s.listen(5) # listen for server message
                 c, addr = s.accept()
                 byte_string = b''
                 data = c.recv(1024)

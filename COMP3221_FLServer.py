@@ -2,6 +2,7 @@ import sys
 import socket
 import json
 import time
+import random
 
 import torch
 import torch.nn as nn
@@ -18,6 +19,8 @@ import pickle
 
 T = 100
 N_CLIENTS = 5
+
+init_interval = 10
 
 class MCLR(nn.Module):
     def __init__(self):
@@ -43,7 +46,11 @@ class Server:
 
         self.ID = "Server"
         self.PORT = int(sys.argv[1]) #(PORT 6000)
-        self.sub_client = sys.argv[2] #(sub_client)
+        self.sub_client = int(sys.argv[2]) #(1)
+        if self.sub_client == 0 or self.sub_client == 5:
+            self.sub_client = 5
+        else:
+            self.sub_client += 1
 
         self.clients = {}  #{"client1": <data_size>, "client2": <data_size>...}
         self.initialisation = True
@@ -82,10 +89,10 @@ class Server:
                             if handshake_start is None:
                                 # Start timer
                                 handshake_start = time.time()
-                                s.settimeout(10)
+                                s.settimeout(init_interval)
                                 continue
-                            elif time.time() - handshake_start < 10: 
-                                s.settimeout(int(10 - (time.time() - handshake_start)))
+                            elif time.time() - handshake_start < init_interval: 
+                                s.settimeout(int(init_interval - (time.time() - handshake_start)))
                                 # Check if 30 seconds has passed
                                 continue
                             else:
@@ -169,9 +176,17 @@ class Server:
         for param in self.global_model.parameters():
             param.data = torch.zeros_like(param.data)
         
+        # Select subclients
+        sub_clients = []
+        while len(sub_clients) < self.sub_client:
+            random_num = random.randint(1, 5)
+            if random_num not in sub_clients:
+                sub_clients.append(random_num)
+
         for id, user in self.client_models.items():
-            for server_param, user_param in zip(self.global_model.parameters(), user.parameters()):
-                server_param.data = server_param.data + user_param.data.clone() * self.clients[id] / self.total_train_size
+            if self.sub_client == 5 or id in sub_clients:
+                for server_param, user_param in zip(self.global_model.parameters(), user.parameters()):
+                    server_param.data = server_param.data + user_param.data.clone() * self.clients[id] / self.total_train_size
         # Reset client models after aggregation
         self.client_models = {}
 
