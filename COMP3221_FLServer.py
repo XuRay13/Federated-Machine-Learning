@@ -3,9 +3,39 @@ import socket
 import json
 import time
 
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import os
+import json
+import copy
+from torch.utils.data import DataLoader
+import matplotlib
+import matplotlib.pyplot as plt
+
+import pickle
+
+
 T = 100
 N_CLIENTS = 5
 
+class MCLR(nn.Module):
+    def __init__(self):
+        super(MCLR, self).__init__()
+        # Create a linear transformation to the incoming data
+        # Input dimension: 784 (28 x 28), Output dimension: 10 (10 classes)
+        self.fc1 = nn.Linear(784, 10)
+
+    # Define how the model is going to be run, from input to output
+    def forward(self, x):
+        # Flattens input by reshaping it into a one-dimensional tensor. 
+        x = torch.flatten(x, 1)
+        # Apply linear transformation
+        x = self.fc1(x)
+        # Apply a softmax followed by a logarithm
+        output = F.log_softmax(x, dim=1)
+        return output
+    
 
 class Server:
     def __init__(self, *args):
@@ -22,7 +52,7 @@ class Server:
 
         # TODO: Init global model
         self.global_iteration = 1
-        self.global_model = None
+        self.global_model = MCLR()
 
     def run(self):
         try:
@@ -51,10 +81,10 @@ class Server:
                             if handshake_start is None:
                                 # Start timer
                                 handshake_start = time.time()
-                                s.settimeout(30)
+                                s.settimeout(10)
                                 continue
-                            elif time.time() - handshake_start < 30: 
-                                s.settimeout(int(30 - (time.time() - handshake_start)))
+                            elif time.time() - handshake_start < 10: 
+                                s.settimeout(int(10 - (time.time() - handshake_start)))
                                 # Check if 30 seconds has passed
                                 continue
                             else:
@@ -102,6 +132,7 @@ class Server:
 
 
                 self.broadcast_finished()
+
         except Exception as e:
             print("[Server] Error: " + str(e))
 
@@ -112,17 +143,24 @@ class Server:
                 try:
                     s.connect((self.HOST, self.PORT+id))
                     # Send global model
-                    msg = {"model": "model" + str(self.global_iteration)}
-                    msg_data_json = json.dumps(msg)
-                    s.send(msg_data_json.encode('utf-8'))
+                    msg_string = pickle.dumps(self.global_model)
+                    print(len(msg_string))
+                    # msg = {"model": msg_string}
+                    # msg_data_json = json.dumps(msg)
+                    s.send(msg_string)
+
                 except Exception as e:
                     print("Failed to send model to client " + str(id) + ": " + str(e))
+
+
 
     def aggergate(self):
         print("Aggregating new global model")
         print(self.client_models)
         # Reset client models after aggregation
         self.client_models = {}
+
+
 
     def broadcast_finished(self):
         print("Model finished training!")
@@ -139,27 +177,7 @@ class Server:
 
 
 
-    # def send_parameters(server_model, users):
-    #     for user in users:
-    #         user.set_parameters(server_model)
-
-
-    # def aggregate_parameters(server_model, users, total_train_samples):
-    #     # Clear global model before aggregation
-    #     for param in server_model.parameters():
-    #         param.data = torch.zeros_like(param.data)
-            
-    #     for user in users:
-    #         for server_param, user_param in zip(server_model.parameters(), user.model.parameters()):
-    #             server_param.data = server_param.data + user_param.data.clone() * user.train_samples / total_train_samples
-    #     return server_model
-
-    # def evaluate(user):
-    #     total_accurancy = 0
-    #     for user in users:
-    #         total_accurancy += user.test()
-    #     return total_accurancy/len(users)
-
 if __name__ == '__main__':
     server = Server()
     server.run()
+
