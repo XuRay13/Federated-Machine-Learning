@@ -137,7 +137,10 @@ class Client:
                 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                     s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
                     s.connect((self.HOST, 6000)) #"A", 6000
-                    s.send(msg)
+                    messages = self.split_byte_string(msg)
+                    messages.append(b'')
+                    for packet in messages:
+                        s.send(packet)
                     # s.send(msg_data_json.encode('utf-8'))
                     s.close()
         
@@ -153,14 +156,21 @@ class Client:
                 s.bind((self.HOST, self.PORT))
                 s.listen(1) # listen for server message
                 c, addr = s.accept()
-                data = c.recv(131072)
-                if not data:
-                    return
-                server_model = pickle.loads(data) 
+                byte_string = b''
+                data = c.recv(1024)
+                while len(data) > 0:
+                    byte_string += data
+                    data = c.recv(1024)
+                server_model = pickle.loads(byte_string) 
                 return server_model
             
         except Exception as e:
             print("Failed to open socket as server: " + str(e))
+
+    def split_byte_string(self, byte_string):
+        # split byte string into packets of 1024 each
+        return [byte_string[i:i+1024] for i in range(0, len(byte_string), 1024)]
+
 
     def test_model(self):
         # TODO

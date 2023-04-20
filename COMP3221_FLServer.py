@@ -109,10 +109,12 @@ class Server:
                     print("Total Number of clients: " + str(n_clients))
                     while len(self.client_models) < n_clients:
                         c, addr = s.accept()
-                        data = c.recv(131072)
-                        if not data:
-                            return
-                        data_json = pickle.loads(data)
+                        data = c.recv(1024)
+                        byte_string = b''
+                        while len(data) > 0:
+                            byte_string += data
+                            data = c.recv(1024)
+                        data_json = pickle.loads(byte_string)
                         # data_json = json.loads(data.decode('utf-8')) 
                         # Accepting client case, new clients will be applied next round
                         #{"id": 1, "data_size": 99}
@@ -146,18 +148,23 @@ class Server:
                     s.connect((self.HOST, self.PORT+id))
                     # Send global model
                     msg_string = pickle.dumps({"model": self.global_model})
-                    print(len(msg_string))
+                    messages = self.split_byte_string(msg_string)
+                    messages.append(b'')
+                    # print(len(msg_string), len(messages))
                     # msg_data_json = json.dumps(msg)
-                    s.send(msg_string)
+                    for packet in messages:
+                        s.send(packet)
 
                 except Exception as e:
                     print("Failed to send model to client " + str(id) + ": " + str(e))
 
-
+    def split_byte_string(self, byte_string):
+        # split byte string into packets of 1024 each
+        return [byte_string[i:i+1024] for i in range(0, len(byte_string), 1024)]
 
     def aggergate(self):
         print("Aggregating new global model")
-        print(self.client_models)
+        # print(self.client_models)
         # Clear global model before aggregation
         for param in self.global_model.parameters():
             param.data = torch.zeros_like(param.data)
