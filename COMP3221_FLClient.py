@@ -15,6 +15,50 @@ import matplotlib.pyplot as plt
 
 
 
+class UserAVG():
+    def __init__(self, client_id, model, learning_rate, batch_size):
+
+        self.X_train, self.y_train, self.X_test, self.y_test, self.train_samples, self.test_samples = get_data(client_id)
+        self.train_data = [(x, y) for x, y in zip(self.X_train, self.y_train)]
+        self.test_data = [(x, y) for x, y in zip(self.X_test, self.y_test)]
+        self.trainloader = DataLoader(self.train_data, self.train_samples)
+        self.testloader = DataLoader(self.test_data, self.test_samples)
+
+        self.loss = nn.NLLLoss()
+
+        self.model = copy.deepcopy(model)
+
+        self.id = client_id
+
+        self.optimizer = torch.optim.SGD(self.model.parameters(), lr=learning_rate)
+        
+    def set_parameters(self, model):
+        for old_param, new_param in zip(self.model.parameters(), model.parameters()):
+            old_param.data = new_param.data.clone()
+            
+    def train(self, epochs):
+        LOSS = 0
+        self.model.train()
+        for epoch in range(1, epochs + 1):
+            self.model.train()
+            for batch_idx, (X, y) in enumerate(self.trainloader):
+                self.optimizer.zero_grad()
+                print(len(X))
+                output = self.model(X)
+                loss = self.loss(output, y)
+                loss.backward()
+                self.optimizer.step()
+        return loss.data
+    
+    def test(self):
+        self.model.eval()
+        test_acc = 0
+        for x, y in self.testloader:
+            output = self.model(x)
+            test_acc += (torch.sum(torch.argmax(output, dim=1) == y) * 1. / y.shape[0]).item()
+            print(str(self.id) + ", Accuracy of client ",self.id, " is: ", test_acc)
+        return test_acc
+
 
 class Client:
     def __init__(self, *args):
@@ -38,7 +82,7 @@ class Client:
                     s.send(msg_data_json.encode('utf-8'))
                     print("[Client{}] sent data...".format(self.ID))
 
-                    
+
                     
                     
             except Exception as e:
