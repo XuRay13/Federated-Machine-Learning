@@ -14,6 +14,10 @@ import matplotlib.pyplot as plt
 
 import pickle
 
+lr = 0.01
+batch_size = 20
+E = 2
+
 class MCLR(nn.Module):
     def __init__(self):
         super(MCLR, self).__init__()
@@ -54,17 +58,24 @@ class UserAVG():
             old_param.data = new_param.data.clone()
             
     def train(self, epochs):
-        LOSS = 0
         self.model.train()
         for epoch in range(1, epochs + 1):
             self.model.train()
             for batch_idx, (X, y) in enumerate(self.trainloader):
                 self.optimizer.zero_grad()
-                print(len(X))
                 output = self.model(X)
                 loss = self.loss(output, y)
                 loss.backward()
                 self.optimizer.step()
+        return loss.data
+    
+    def train_loss(self):
+        self.model.train()
+        for batch_idx, (X, y) in enumerate(self.trainloader):
+                self.optimizer.zero_grad()
+                output = self.model(X)
+                loss = self.loss(output, y)
+        print("Training loss:", str(loss.data.item()))        
         return loss.data
     
     def test(self):
@@ -73,7 +84,7 @@ class UserAVG():
         for x, y in self.testloader:
             output = self.model(x)
             test_acc += (torch.sum(torch.argmax(output, dim=1) == y) * 1. / y.shape[0]).item()
-            print(str(self.id) + ", Accuracy of client ",self.id, " is: ", test_acc)
+            print("Testing accuracy: ", test_acc)
         return test_acc
 
 
@@ -88,7 +99,7 @@ class Client:
         self.PORT = int(sys.argv[2]) #(PORT 6001)
 
     def run(self):
-        X_train, y_train, X_test, y_test, train_samples, test_samples = self.get_data()
+        data = self.get_data()
         
 
         try:
@@ -98,7 +109,7 @@ class Client:
                 print("established connection to server")
 
                 # Send handshake
-                msg = {"id": self.ID_num, "type": "handshake", "data_size": len(X_train)}
+                msg = {"id": self.ID_num, "type": "handshake", "data_size": len(data[0])}
 
                 msg_data_json = json.dumps(msg)
                 s.send(msg_data_json.encode('utf-8'))
@@ -109,21 +120,25 @@ class Client:
                 print("I am client " + str(self.ID_num))
                 print("Receiving new global model")
                 # Receive global model
-                model_data = self.listen_for_broadcast()
-
-                print("received model pickle string: " + str(dir(model_data)))
-                # TODO: Test local model
+                server_data = self.listen_for_broadcast()
+                server_model = server_data['model']
+                # Test local model
+                local_model = UserAVG(self.ID_num, server_model, lr, batch_size, data)
+                local_model.train_loss()
+                local_model.test()
                 
-                
-                # TODO: Train local model
+                # Train local model
+                print("Local training...")
+                local_model.train(E)
                 # Send local model
-                msg = {"id": self.ID_num, "type": "model", "model": None}
+                print("Sending new local model")
+                msg = pickle.dumps({"model": local_model.model, "type": "model", "id": self.ID_num})
 
-                msg_data_json = json.dumps(msg)
                 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                     s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
                     s.connect((self.HOST, 6000)) #"A", 6000
-                    s.send(msg_data_json.encode('utf-8'))
+                    s.send(msg)
+                    # s.send(msg_data_json.encode('utf-8'))
                     s.close()
         
         except Exception as e:
@@ -138,10 +153,9 @@ class Client:
                 s.bind((self.HOST, self.PORT))
                 s.listen(1) # listen for server message
                 c, addr = s.accept()
-                data = c.recv(65536)
+                data = c.recv(131072)
                 if not data:
                     return
-                # data_json = json.loads(data.decode('utf-8'))
                 server_model = pickle.loads(data) 
                 return server_model
             

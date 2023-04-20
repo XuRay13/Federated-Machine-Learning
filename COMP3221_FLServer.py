@@ -50,9 +50,9 @@ class Server:
 
         self.client_models = {}
 
-        # TODO: Init global model
         self.global_iteration = 1
         self.global_model = MCLR()
+        self.total_train_size = 0
 
     def run(self):
         try:
@@ -75,6 +75,7 @@ class Server:
                         #{"id": "client1", "data_size": 99}
                         if data_json["type"] == "handshake" and self.clients.get(data_json["id"], None) == None:
                             self.clients[data_json["id"]] = data_json["data_size"]
+                            self.total_train_size += data_json["data_size"]
                         
                         # initialisation stage
                         if self.initialisation:
@@ -108,14 +109,16 @@ class Server:
                     print("Total Number of clients: " + str(n_clients))
                     while len(self.client_models) < n_clients:
                         c, addr = s.accept()
-                        data = c.recv(1024)
+                        data = c.recv(131072)
                         if not data:
                             return
-                        data_json = json.loads(data.decode('utf-8')) 
+                        data_json = pickle.loads(data)
+                        # data_json = json.loads(data.decode('utf-8')) 
                         # Accepting client case, new clients will be applied next round
                         #{"id": 1, "data_size": 99}
                         if data_json["type"] == "handshake" and self.clients.get(data_json["id"], None) == None:
                             self.clients[data_json["id"]] = data_json["data_size"]
+                            self.total_train_size += data_json["data_size"]
                         
                         # Accepting models case
                         #{"id": 1, "model": <model parameters>}
@@ -125,7 +128,6 @@ class Server:
 
                         
                     # Received all models for this round
-                    print(self.client_models)
                     self.aggergate()
                     self.broadcast()
                     self.global_iteration += 1
@@ -143,9 +145,8 @@ class Server:
                 try:
                     s.connect((self.HOST, self.PORT+id))
                     # Send global model
-                    msg_string = pickle.dumps(self.global_model)
+                    msg_string = pickle.dumps({"model": self.global_model})
                     print(len(msg_string))
-                    # msg = {"model": msg_string}
                     # msg_data_json = json.dumps(msg)
                     s.send(msg_string)
 
@@ -157,9 +158,15 @@ class Server:
     def aggergate(self):
         print("Aggregating new global model")
         print(self.client_models)
+        # Clear global model before aggregation
+        for param in self.global_model.parameters():
+            param.data = torch.zeros_like(param.data)
+        
+        for id, user in self.client_models.items():
+            for server_param, user_param in zip(self.global_model.parameters(), user.parameters()):
+                server_param.data = server_param.data + user_param.data.clone() * self.clients[id] / self.total_train_size
         # Reset client models after aggregation
         self.client_models = {}
-
 
 
     def broadcast_finished(self):
@@ -170,7 +177,7 @@ class Server:
                     s.connect((self.HOST, self.PORT+id))
                     # Send global model
                     msg = {"model": None, "message": "Training finished"}
-                    msg_data_json = json.dumps(msg)
+                    msg_data_json = pickle.dumps(msg)
                     s.send(msg_data_json.encode('utf-8'))
                 except Exception as e:
                     print("Failed to send model to client " + str(id) + ": " + str(e))
