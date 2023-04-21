@@ -56,6 +56,8 @@ class UserAVG():
         self.id = client_id
 
         self.optimizer = torch.optim.SGD(self.model.parameters(), lr=learning_rate)
+
+        
         
     def set_parameters(self, model):
         for old_param, new_param in zip(self.model.parameters(), model.parameters()):
@@ -104,6 +106,9 @@ class Client:
 
         self.mini_batch_GD = int(sys.argv[3])
 
+        self.total_training_loss = 0
+        self.total_accuracy = 0
+
     def run(self):
         data = self.get_data()
         
@@ -121,8 +126,16 @@ class Client:
                 s.send(msg_data_json.encode('utf-8'))
                 print("[Client{}] sent data...".format(self.ID))
 
-            
-            while True:
+
+            fstr = self.ID + "_log.txt"
+            with open(fstr, 'a') as f:
+                f.truncate(0)
+                f.close()
+
+            round = -1        
+            while round < 100:
+                round += 1
+                print("round" + str(round) + ":")
                 print("I am client " + str(self.ID_num))
                 print("Receiving new global model")
                 # Receive global model
@@ -133,8 +146,17 @@ class Client:
                     local_model = UserAVG(self.ID_num, server_model, lr, batch_size, data)
                 else:
                     local_model = UserAVG(self.ID_num, server_model, lr, None, data)
-                local_model.train_loss()
-                local_model.test()
+                training_loss = local_model.train_loss()
+                test_accuracy = local_model.test()
+
+                self.total_training_loss += training_loss
+                self.total_accuracy += test_accuracy
+
+                #write to client.txt file
+                with open(fstr, 'a') as f:
+                    recordstr = "{}, {}, {}\n".format(str(round), str(training_loss), str(test_accuracy))
+                    f.write(recordstr)
+                    f.close()
                 
                 # Train local model
                 print("Local training...")
@@ -152,10 +174,15 @@ class Client:
                         s.send(packet)
                     # s.send(msg_data_json.encode('utf-8'))
                     s.close()
-        
         except Exception as e:
             print("[Client] Can't connect to the Server:  ", str(e))
+            
             exit()
+
+        avg_loss = self.total_training_loss / 100
+        avg_acc = self.total_accuracy / 100
+        self.show_accuracy_graph(avg_acc)
+        self.show_training_loss_graph(avg_loss)
 
     def listen_for_broadcast(self):
         # Simply listen for a message from the server
@@ -181,21 +208,24 @@ class Client:
         return [byte_string[i:i+1024] for i in range(0, len(byte_string), 1024)]
 
 
-    def test_model(self):
-        # TODO
-        pass
-        # self.model.eval()
-        # test_acc = 0
-        # for x, y in self.testloader:
-        #     output = self.model(x)
-        #     test_acc += (torch.sum(torch.argmax(output, dim=1) == y) * 1. / y.shape[0]).item()
-        #     print(str(self.id) + ", Accuracy of client ",self.id, " is: ", test_acc)
-        # return test_acc
+    def show_accuracy_graph(self, avg_acc):
+        plt.figure(1,figsize=(5, 5))
+        plt.plot(avg_acc, label="FedAvg", linewidth  = 1)
+        plt.ylim([0.9,  0.99])
+        plt.legend(loc='upper right', prop={'size': 12}, ncol=2)
+        plt.ylabel('Testing Acc')
+        plt.xlabel('Global rounds')
+        plt.show()
 
-    def train_model(self):
-        # TODO
-        pass
+    def show_training_loss_graph(self, avg_loss):
+        plt.figure(1,figsize=(5, 5))
+        plt.plot(avg_loss, label="FedAvg", linewidth  = 1)
+        plt.legend(loc='upper right', prop={'size': 12}, ncol=2)
+        plt.ylabel('Training Loss')
+        plt.xlabel('Global rounds')
+        plt.show()
 
+    
 
     def get_data(self, id=""):
         train_path = os.path.join("FLdata", "train", "mnist_train_" + self.ID + ".json")
@@ -218,14 +248,7 @@ class Client:
         train_samples, test_samples = len(y_train), len(y_test)
         return X_train, y_train, X_test, y_test, train_samples, test_samples
     
-    def test(self):
-        X_train, y_train, X_test, y_test, _, _= self.get_data()
-        print(len(X_train))
-        print(len(y_train))
-        image = X_train[0].numpy().reshape(28,28)
-        print(image.shape)
-        plt.imshow(image, cmap='gray')
-        print("label:",y_train[0])
+
 
     
 

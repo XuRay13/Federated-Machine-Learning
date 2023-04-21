@@ -198,7 +198,7 @@ class Server:
                 try:
                     s.connect((self.HOST, self.PORT+id))
                     # Send global model
-                    msg = {"model": None, "message": "Training finished"}
+                    msg = {"model": self.global_model, "message": "Training finished"}
                     msg_data_json = pickle.dumps(msg)
                     s.send(msg_data_json.encode('utf-8'))
                 except Exception as e:
