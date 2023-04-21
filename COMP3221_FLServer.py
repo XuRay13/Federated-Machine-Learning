@@ -20,7 +20,7 @@ import pickle
 T = 100
 N_CLIENTS = 5
 
-init_interval = 10
+init_interval = 30
 
 class MCLR(nn.Module):
     def __init__(self):
@@ -135,13 +135,13 @@ class Server:
                         if data_json["type"] == "model":
                             self.client_models[data_json["id"]] = data_json["model"]
                             print("Getting local model from client " + str(data_json["id"]))
-
                         
                     # Received all models for this round
+                    if self.global_iteration < T:
+                        self.broadcast()
                     self.aggergate()
-                    self.broadcast()
                     self.global_iteration += 1
-
+                    
 
                 self.broadcast_finished()
 
@@ -201,7 +201,8 @@ class Server:
                     # Send global model
                     msg = {"model": self.global_model, "message": "Training finished"}
                     msg_data_json = pickle.dumps(msg)
-                    s.send(msg_data_json.encode('utf-8'))
+                    s.send(msg_data_json)
+                    s.send(b'')
                 except Exception as e:
                     print("Failed to send model to client " + str(id) + ": " + str(e))
 

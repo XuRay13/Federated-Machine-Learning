@@ -81,7 +81,7 @@ class UserAVG():
                 self.optimizer.zero_grad()
                 output = self.model(X)
                 loss = self.loss(output, y)
-        print("Training loss:", str(loss.data.item()))        
+        print("Training loss: {}".format(str(loss.data.item())))        
         return loss.data.item()
     
     def test(self):
@@ -90,7 +90,7 @@ class UserAVG():
         for x, y in self.testloader:
             output = self.model(x)
             test_acc += (torch.sum(torch.argmax(output, dim=1) == y) * 1. / y.shape[0]).item()
-            print("Testing accuracy: ", test_acc * 100)
+            print("Testing accuracy: {0:.2f}%".format(test_acc * 100))
         return test_acc
 
 
@@ -114,14 +114,12 @@ class Client:
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                 s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
                 s.connect((self.HOST, 6000)) #"A", 6000
-                print("established connection to server")
 
                 # Send handshake
                 msg = {"id": self.ID_num, "type": "handshake", "data_size": len(data[0])}
 
                 msg_data_json = json.dumps(msg)
                 s.send(msg_data_json.encode('utf-8'))
-                print("[Client{}] sent data...".format(self.ID))
 
 
             fstr = self.ID + "_log.txt"
@@ -129,48 +127,54 @@ class Client:
                 f.truncate(0)
                 f.close()
 
-            round = -1        
-            while True:
-                round += 1
-                print("round" + str(round) + ":")
-                print("I am client " + str(self.ID_num))
-                print("Receiving new global model")
-                # Receive global model
-                server_data = self.listen_for_broadcast()
-                server_model = server_data['model']
-                # Test local model
-                if self.mini_batch_GD == 1:
-                    local_model = UserAVG(self.ID_num, server_model, lr, batch_size, data)
-                else:
-                    local_model = UserAVG(self.ID_num, server_model, lr, None, data)
-                
-                training_loss = local_model.train_loss()
-                test_accuracy = local_model.test()
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                s.bind((self.HOST, self.PORT))
+                s.listen(5) # listen for server message
+
+                round = -1        
+                while True:
+                    round += 1
+                    # Receive global model
+                    server_data = self.listen_for_broadcast(s)
+                    if server_data.get("message", None) == "Training finished":
+                        print("Training finished!")
+                        return
+                    print("I am client " + str(self.ID_num))
+                    print("Receiving new global model")
+                    server_model = server_data['model']
+                    # Test local model
+                    if self.mini_batch_GD == 1:
+                        local_model = UserAVG(self.ID_num, server_model, lr, batch_size, data)
+                    else:
+                        local_model = UserAVG(self.ID_num, server_model, lr, None, data)
+                    
+                    training_loss = local_model.train_loss()
+                    test_accuracy = local_model.test()
 
 
 
-                #write to client.txt file
-                with open(fstr, 'a') as f:
-                    recordstr = "{}, {}, {}\n".format(str(round), str(training_loss), str(test_accuracy))
-                    f.write(recordstr)
-                    f.close()
-                
-                # Train local model
-                print("Local training...")
-                local_model.train(E)
-                # Send local model
-                print("Sending new local model")
-                msg = pickle.dumps({"model": local_model.model, "type": "model", "id": self.ID_num})
+                    #write to client.txt file
+                    with open(fstr, 'a') as f:
+                        recordstr = "{}, {}, {}\n".format(str(round), str(training_loss), str(test_accuracy))
+                        f.write(recordstr)
+                        f.close()
+                    
+                    # Train local model
+                    print("Local training...")
+                    local_model.train(E)
+                    # Send local model
+                    print("Sending new local model")
+                    msg = pickle.dumps({"model": local_model.model, "type": "model", "id": self.ID_num})
 
-                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-                    s.connect((self.HOST, 6000)) #"A", 6000
-                    messages = self.split_byte_string(msg)
-                    messages.append(b'')
-                    for packet in messages:
-                        s.send(packet)
-                    # s.send(msg_data_json.encode('utf-8'))
-                    s.close()
+                    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s2:
+                        s2.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                        s2.connect((self.HOST, 6000)) #"A", 6000
+                        messages = self.split_byte_string(msg)
+                        messages.append(b'')
+                        
+                        for packet in messages:
+                            s2.send(packet)
 
         except Exception as e:
             print("[Client] Can't connect to the Server:  ", str(e))
@@ -179,21 +183,17 @@ class Client:
 
  
 
-    def listen_for_broadcast(self):
+    def listen_for_broadcast(self, s):
         # Simply listen for a message from the server
         try:
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-                s.bind((self.HOST, self.PORT))
-                s.listen(5) # listen for server message
-                c, addr = s.accept()
-                byte_string = b''
+            c, addr = s.accept()
+            byte_string = b''
+            data = c.recv(1024)
+            while len(data) > 0:
+                byte_string += data
                 data = c.recv(1024)
-                while len(data) > 0:
-                    byte_string += data
-                    data = c.recv(1024)
-                server_model = pickle.loads(byte_string) 
-                return server_model
+            server_model = pickle.loads(byte_string) 
+            return server_model
             
         except Exception as e:
             print("Failed to open socket as server: " + str(e))
@@ -231,6 +231,5 @@ class Client:
 
 client = Client()
 client.run()
-x = client.test()
 
 
