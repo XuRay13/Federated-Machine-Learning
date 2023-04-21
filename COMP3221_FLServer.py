@@ -100,6 +100,7 @@ class Server:
                                 self.broadcast()
                                 self.initialisation = False
                                 break
+                            
                 except Exception as e:
                     # 30 seconds has passed, first broadcast
                     self.broadcast()

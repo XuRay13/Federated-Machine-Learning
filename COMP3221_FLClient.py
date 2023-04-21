@@ -82,7 +82,7 @@ class UserAVG():
                 output = self.model(X)
                 loss = self.loss(output, y)
         print("Training loss:", str(loss.data.item()))        
-        return loss.data
+        return loss.data.item()
     
     def test(self):
         self.model.eval()
@@ -105,9 +105,6 @@ class Client:
         self.PORT = int(sys.argv[2]) #(PORT 6001)
 
         self.mini_batch_GD = int(sys.argv[3])
-
-        self.total_training_loss = 0
-        self.total_accuracy = 0
 
     def run(self):
         data = self.get_data()
@@ -133,7 +130,7 @@ class Client:
                 f.close()
 
             round = -1        
-            while round < 100:
+            while True:
                 round += 1
                 print("round" + str(round) + ":")
                 print("I am client " + str(self.ID_num))
@@ -146,11 +143,11 @@ class Client:
                     local_model = UserAVG(self.ID_num, server_model, lr, batch_size, data)
                 else:
                     local_model = UserAVG(self.ID_num, server_model, lr, None, data)
+                
                 training_loss = local_model.train_loss()
                 test_accuracy = local_model.test()
 
-                self.total_training_loss += training_loss
-                self.total_accuracy += test_accuracy
+
 
                 #write to client.txt file
                 with open(fstr, 'a') as f:
@@ -174,15 +171,13 @@ class Client:
                         s.send(packet)
                     # s.send(msg_data_json.encode('utf-8'))
                     s.close()
+
         except Exception as e:
             print("[Client] Can't connect to the Server:  ", str(e))
             
             exit()
 
-        avg_loss = self.total_training_loss / 100
-        avg_acc = self.total_accuracy / 100
-        self.show_accuracy_graph(avg_acc)
-        self.show_training_loss_graph(avg_loss)
+ 
 
     def listen_for_broadcast(self):
         # Simply listen for a message from the server
@@ -207,25 +202,6 @@ class Client:
         # split byte string into packets of 1024 each
         return [byte_string[i:i+1024] for i in range(0, len(byte_string), 1024)]
 
-
-    def show_accuracy_graph(self, avg_acc):
-        plt.figure(1,figsize=(5, 5))
-        plt.plot(avg_acc, label="FedAvg", linewidth  = 1)
-        plt.ylim([0.9,  0.99])
-        plt.legend(loc='upper right', prop={'size': 12}, ncol=2)
-        plt.ylabel('Testing Acc')
-        plt.xlabel('Global rounds')
-        plt.show()
-
-    def show_training_loss_graph(self, avg_loss):
-        plt.figure(1,figsize=(5, 5))
-        plt.plot(avg_loss, label="FedAvg", linewidth  = 1)
-        plt.legend(loc='upper right', prop={'size': 12}, ncol=2)
-        plt.ylabel('Training Loss')
-        plt.xlabel('Global rounds')
-        plt.show()
-
-    
 
     def get_data(self, id=""):
         train_path = os.path.join("FLdata", "train", "mnist_train_" + self.ID + ".json")
